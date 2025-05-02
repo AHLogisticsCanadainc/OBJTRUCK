@@ -1,0 +1,39 @@
+@import "../styles/theme.css";
+@import "../styles/typography.css";
+@import "../styles/layout.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Custom component styles can go here */
+@layer components {
+  .auth-form {
+    @apply w-full max-w-md space-y-8;
+  }
+
+  .auth-input {
+    @apply bg-background border-input text-foreground placeholder:text-muted-foreground;
+  }
+
+  .auth-button {
+    @apply w-full bg-primary hover:bg-primary/90 text-white py-6 text-lg font-medium rounded-lg h-[60px];
+  }
+
+  .error-message {
+    @apply bg-destructive/10 border border-destructive/50 text-destructive px-4 py-3 rounded;
+  }
+
+  .success-message {
+    @apply bg-green-500/10 border border-green-500/50 text-green-700 dark:text-green-400 px-4 py-3 rounded;
+  }
+}
