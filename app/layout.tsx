@@ -9,8 +9,8 @@ const geist = Geist({
 })
 
 export const metadata: Metadata = {
-  title: "Supabase Auth with SSR",
-  description: "A Next.js application with Supabase authentication using SSR",
+  title: "CCIA Insurance Portal",
+  description: "Insurance management system for CCIA agents",
     generator: 'v0.dev'
 }
 
