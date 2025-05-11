@@ -207,8 +207,8 @@ export function QuoteOptionList({ options, onUpdateStatus, onEdit, onDelete, onD
                 <TabsTrigger value="environmental">Environmental</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="details" className="mt-0">
-                <div className="grid grid-cols-2 gap-4">
+              <TabsContent value="details" className="mt-0 overflow-x-auto">
+                <div className="grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
                   {/* Left Column */}
                   <div className="space-y-4">
                     <div className={cn("rounded-lg p-3", "bg-muted/20 dark:bg-muted/10")}>
@@ -311,7 +311,7 @@ export function QuoteOptionList({ options, onUpdateStatus, onEdit, onDelete, onD
                 )}
               </TabsContent>
 
-              <TabsContent value="pricing" className="mt-0">
+              <TabsContent value="pricing" className="mt-0 overflow-x-auto">
                 <div className={cn("rounded-lg p-4 mb-4", "bg-muted/20 dark:bg-primary/10")}>
                   <h4 className="text-sm font-medium mb-3 flex items-center">
                     <DollarSign className="h-4 w-4 mr-1.5 text-primary" />
@@ -336,7 +336,7 @@ export function QuoteOptionList({ options, onUpdateStatus, onEdit, onDelete, onD
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
                   {/* Cost breakdown card */}
                   <div className={cn("rounded-lg p-3", "bg-muted/20 dark:bg-muted/10")}>
                     <h4 className="text-sm font-medium mb-3">Cost Breakdown</h4>
@@ -515,8 +515,8 @@ export function QuoteOptionList({ options, onUpdateStatus, onEdit, onDelete, onD
                 </div>
               </TabsContent>
 
-              <TabsContent value="environmental" className="mt-0">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <TabsContent value="environmental" className="mt-0 overflow-x-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
                   <div className={cn("rounded-lg p-3", "bg-muted/20 dark:bg-muted/10")}>
                     <h4 className="text-sm font-medium mb-3 flex items-center">
                       <AlertTriangle className="h-4 w-4 mr-1.5 text-yellow-500 dark:text-yellow-400" />

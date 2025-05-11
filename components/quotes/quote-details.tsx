@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react"
 import { format } from "date-fns"
 import type { Quote, QuoteOption, NewQuoteOption } from "@/types/quotes"
 import type { Client } from "@/types/clients"
@@ -50,12 +50,14 @@ import { Badge } from "@/components/ui/badge"
 import { CreateOptionForm } from "./option-form/create-option-form"
 // Add this import at the top of the file
 import { testSupabaseConnection, checkTableStructure, checkQuoteAndOptions } from "@/lib/debug-supabase-connection"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 interface QuoteDetailsProps {
   quote: Quote
   open: boolean
   onOpenChange: (open: boolean) => void
   onUpdateQuote: (id: string, data: Partial<Quote>) => Promise<Quote | null>
+  containerClassName?: string
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -238,8 +240,44 @@ export function QuoteDetails({ quote, open, onOpenChange, onUpdateQuote }: Quote
     if (open && displayedQuote?.id) {
       // We don't need to call fetchOptions here as the hook will handle it
       console.log(`Dialog opened for quote ${displayedQuote.id}`)
+
+      // Add a resize handler to ensure proper layout when dialog opens
+      const handleResize = () => {
+        // Force a reflow of the dialog content
+        const dialogContent = document.querySelector('[role="dialog"] > div')
+        if (dialogContent) {
+          dialogContent.classList.add("resizing")
+          setTimeout(() => dialogContent.classList.remove("resizing"), 100)
+        }
+      }
+
+      window.addEventListener("resize", handleResize)
+      return () => window.removeEventListener("resize", handleResize)
     }
   }, [open, displayedQuote?.id])
+
+  // Add this near the other useEffect hooks
+  useLayoutEffect(() => {
+    if (open) {
+      // Reset scroll position when dialog opens
+      const scrollArea = document.querySelector('[role="dialog"] .scroll-area')
+      if (scrollArea) {
+        scrollArea.scrollTop = 0
+      }
+
+      // Ensure the dialog is properly sized
+      const dialogContent = document.querySelector('[role="dialog"] > div')
+      if (dialogContent) {
+        dialogContent.style.maxHeight = "90vh"
+      }
+
+      // Ensure footer is visible
+      const footer = document.querySelector('[role="dialog"] .dialog-footer')
+      if (footer) {
+        footer.scrollIntoView({ block: "end" })
+      }
+    }
+  }, [open])
 
   // Handle refreshing options
   const handleRefreshOptions = async () => {
@@ -909,8 +947,8 @@ A.H Logistics Canada Inc.`,
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[700px] md:max-w-[900px] lg:max-w-[1000px] w-[95vw] max-h-[90vh] p-0">
-          <DialogHeader className="px-6 pt-6 pb-2">
+        <DialogContent className="sm:max-w-[700px] md:max-w-[900px] lg:max-w-[1000px] w-[95vw] max-h-[90vh] p-0 overflow-hidden flex flex-col">
+          <DialogHeader className="px-6 pt-6 pb-2 flex-shrink-0">
             <div className="flex justify-between items-center">
               <DialogTitle className="flex items-center text-xl">
                 <FileText className="mr-2 h-5 w-5 text-primary" /> Quote{" "}
@@ -963,7 +1001,7 @@ A.H Logistics Canada Inc.`,
             </div>
           </DialogHeader>
 
-          <ScrollArea className="max-h-[65vh]">
+          <ScrollArea className="flex-1 overflow-auto scroll-area" style={{ maxHeight: "calc(90vh - 220px)" }}>
             <div className="p-6 pt-2 space-y-6">
               {/* Summary Card */}
               <Card className={cn("border-primary/20 shadow-sm", "bg-primary/5 dark:bg-primary/10")}>
@@ -1001,256 +1039,277 @@ A.H Logistics Canada Inc.`,
                 </CardContent>
               </Card>
 
-              {/* Quote Information Section */}
-              <div>
-                <div className="flex items-center mb-2">
-                  <FileText className="mr-2 h-4 w-4 text-primary" />
-                  <h3 className="text-lg font-medium">Quote Information</h3>
-                </div>
-                <Separator className={cn("mb-4", "bg-blue-200 dark:bg-blue-900/50")} />
-                <div
-                  className={cn(
-                    "grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded-md",
-                    "border border-blue-200 bg-blue-50/30",
-                    "dark:border-blue-900/50 dark:bg-blue-950/20",
-                  )}
-                >
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-muted-foreground">Reference Number</p>
-                    {isEditing ? (
-                      <Input
-                        value={editedQuote?.reference || ""}
-                        onChange={(e) => setEditedQuote({ ...editedQuote!, reference: e.target.value })}
-                        className="dark:bg-background/80"
-                      />
-                    ) : (
-                      <p className="text-sm">{displayedQuote.reference || displayedQuote.id.substring(0, 8)}</p>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-muted-foreground">Status</p>
-                    {isEditing ? (
-                      <Select
-                        value={editedQuote?.status || "Pending"}
-                        onValueChange={(value) => setEditedQuote({ ...editedQuote!, status: value })}
+              <Tabs defaultValue="details" className="w-full p-4">
+                <TabsList className="grid grid-cols-3 mb-4">
+                  <TabsTrigger value="details">Service Details</TabsTrigger>
+                  <TabsTrigger value="pricing">Pricing Breakdown</TabsTrigger>
+                  <TabsTrigger value="environmental">Environmental</TabsTrigger>
+                </TabsList>
+                <div className="overflow-x-hidden">
+                  <TabsContent value="details" className="mt-0">
+                    {/* Quote Information Section */}
+                    <div>
+                      <div className="flex items-center mb-2">
+                        <FileText className="mr-2 h-4 w-4 text-primary" />
+                        <h3 className="text-lg font-medium">Quote Information</h3>
+                      </div>
+                      <Separator className={cn("mb-4", "bg-blue-200 dark:bg-blue-900/50")} />
+                      <div
+                        className={cn(
+                          "grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded-md",
+                          "border border-blue-200 bg-blue-50/30",
+                          "dark:border-blue-900/50 dark:bg-blue-950/20",
+                        )}
                       >
-                        <SelectTrigger className="dark:bg-background/80">
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Pending">Pending</SelectItem>
-                          <SelectItem value="Approved">Approved</SelectItem>
-                          <SelectItem value="Rejected">Rejected</SelectItem>
-                          <SelectItem value="Expired">Expired</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <p className="text-sm">{displayedQuote.status}</p>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-muted-foreground">Quote Date</p>
-                    {isEditing ? (
-                      <Input
-                        type="date"
-                        value={editedQuote?.date || ""}
-                        onChange={(e) => setEditedQuote({ ...editedQuote!, date: e.target.value })}
-                        className="dark:bg-background/80"
-                      />
-                    ) : (
-                      <p className="text-sm">{displayedQuote.date}</p>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-muted-foreground">Created At</p>
-                    <p className="text-sm">{formatDate(displayedQuote.created_at)}</p>
-                  </div>
-                  {displayedQuote.sent_email && (
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-muted-foreground">Email Status</p>
-                      <p className="text-sm flex items-center">
-                        <MailIcon className="h-3.5 w-3.5 mr-1.5 text-green-500" />
-                        Sent on {formatDate(displayedQuote.sent_email_at)}
-                      </p>
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-muted-foreground">Reference Number</p>
+                          {isEditing ? (
+                            <Input
+                              value={editedQuote?.reference || ""}
+                              onChange={(e) => setEditedQuote({ ...editedQuote!, reference: e.target.value })}
+                              className="dark:bg-background/80"
+                            />
+                          ) : (
+                            <p className="text-sm">{displayedQuote.reference || displayedQuote.id.substring(0, 8)}</p>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-muted-foreground">Status</p>
+                          {isEditing ? (
+                            <Select
+                              value={editedQuote?.status || "Pending"}
+                              onValueChange={(value) => setEditedQuote({ ...editedQuote!, status: value })}
+                            >
+                              <SelectTrigger className="dark:bg-background/80">
+                                <SelectValue placeholder="Select status" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Pending">Pending</SelectItem>
+                                <SelectItem value="Approved">Approved</SelectItem>
+                                <SelectItem value="Rejected">Rejected</SelectItem>
+                                <SelectItem value="Expired">Expired</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <p className="text-sm">{displayedQuote.status}</p>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-muted-foreground">Quote Date</p>
+                          {isEditing ? (
+                            <Input
+                              type="date"
+                              value={editedQuote?.date || ""}
+                              onChange={(e) => setEditedQuote({ ...editedQuote!, date: e.target.value })}
+                              className="dark:bg-background/80"
+                            />
+                          ) : (
+                            <p className="text-sm">{displayedQuote.date}</p>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-muted-foreground">Created At</p>
+                          <p className="text-sm">{formatDate(displayedQuote.created_at)}</p>
+                        </div>
+                        {displayedQuote.sent_email && (
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-muted-foreground">Email Status</p>
+                            <p className="text-sm flex items-center">
+                              <MailIcon className="h-3.5 w-3.5 mr-1.5 text-green-500" />
+                              Sent on {formatDate(displayedQuote.sent_email_at)}
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
 
-              {/* Customer Information Section */}
-              <div>
-                <div className="flex items-center mb-2">
-                  <User className="mr-2 h-4 w-4 text-primary" />
-                  <h3 className="text-lg font-medium">Customer Information</h3>
-                </div>
-                <Separator className={cn("mb-4", "bg-green-200 dark:bg-green-900/50")} />
+                    {/* Customer Information Section */}
+                    <div>
+                      <div className="flex items-center mb-2">
+                        <User className="mr-2 h-4 w-4 text-primary" />
+                        <h3 className="text-lg font-medium">Customer Information</h3>
+                      </div>
+                      <Separator className={cn("mb-4", "bg-green-200 dark:bg-green-900/50")} />
 
-                {isLoadingClient ? (
-                  <div className="flex items-center justify-center p-6 border rounded-md bg-muted/10">
-                    <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
-                    <span>Loading client details...</span>
-                  </div>
-                ) : clientError ? (
-                  <Alert variant="destructive" className="mb-4">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{clientError}</AlertDescription>
-                  </Alert>
-                ) : isEditing ? (
-                  <div
-                    className={cn(
-                      "p-3 rounded-md",
-                      "border border-green-200 bg-green-50/30",
-                      "dark:border-green-900/50 dark:bg-green-950/20",
-                    )}
-                  >
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-muted-foreground">Select Client</p>
-                      {clientsLoading ? (
-                        <div className="flex items-center space-x-2 h-10 px-3 border rounded-md">
-                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                          <span className="text-muted-foreground">Loading clients...</span>
+                      {isLoadingClient ? (
+                        <div className="flex items-center justify-center p-6 border rounded-md bg-muted/10">
+                          <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
+                          <span>Loading client details...</span>
+                        </div>
+                      ) : clientError ? (
+                        <Alert variant="destructive" className="mb-4">
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertDescription>{clientError}</AlertDescription>
+                        </Alert>
+                      ) : isEditing ? (
+                        <div
+                          className={cn(
+                            "p-3 rounded-md",
+                            "border border-green-200 bg-green-50/30",
+                            "dark:border-green-900/50 dark:bg-green-950/20",
+                          )}
+                        >
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">Select Client</p>
+                            {clientsLoading ? (
+                              <div className="flex items-center space-x-2 h-10 px-3 border rounded-md">
+                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                <span className="text-muted-foreground">Loading clients...</span>
+                              </div>
+                            ) : (
+                              <Select value={editedQuote?.client_id || ""} onValueChange={handleClientChange}>
+                                <SelectTrigger className="dark:bg-background/80">
+                                  <SelectValue placeholder="Select client" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {clients.map((client) => (
+                                    <SelectItem key={client.id} value={client.id}>
+                                      {client.company_name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </div>
+                        </div>
+                      ) : clientDetails ? (
+                        <div
+                          className={cn(
+                            "grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded-md",
+                            "border border-green-200 bg-green-50/30",
+                            "dark:border-green-900/50 dark:bg-green-950/20",
+                          )}
+                        >
+                          {/* Company Name */}
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-muted-foreground">Company</p>
+                            <p className="text-sm">{clientDetails.company_name}</p>
+                          </div>
+
+                          {/* Contact Name */}
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-muted-foreground">Contact</p>
+                            <p className="text-sm">{clientDetails.contact_name}</p>
+                          </div>
+
+                          {/* Email */}
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-muted-foreground">Email</p>
+                            <p className="text-sm">{clientDetails.email}</p>
+                          </div>
+
+                          {/* Phone Number - Only if available */}
+                          {clientDetails.phone_number && (
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium text-muted-foreground">Phone</p>
+                              <p className="text-sm flex items-center">
+                                <Phone className="h-3.5 w-3.5 mr-1 text-primary" />
+                                {clientDetails.phone_number}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Address - Only if any address field is available */}
+                          {(clientDetails.address_street || clientDetails.address_city) && (
+                            <div className="space-y-1 md:col-span-2">
+                              <p className="text-sm font-medium text-muted-foreground">Address</p>
+                              <div className="flex items-start">
+                                <MapPin className="h-3.5 w-3.5 mr-1 text-primary mt-0.5" />
+                                <div>{formatAddress()}</div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Payment Terms - Only if available */}
+                          {clientDetails.payment_terms && (
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium text-muted-foreground">Payment Terms</p>
+                              <p className="text-sm">{clientDetails.payment_terms}</p>
+                            </div>
+                          )}
+
+                          {/* Credit Limit - Only if available */}
+                          {clientDetails.credit_limit && (
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium text-muted-foreground">Credit Limit</p>
+                              <p className="text-sm flex items-center">
+                                <CreditCard className="h-3.5 w-3.5 mr-1 text-primary" />$
+                                {clientDetails.credit_limit.toFixed(2)}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Notes - Only if available */}
+                          {clientDetails.notes && (
+                            <div className="space-y-1 md:col-span-2">
+                              <p className="text-sm font-medium text-muted-foreground">Notes</p>
+                              <p className="text-sm flex items-start">
+                                <Info className="h-3.5 w-3.5 mr-1 text-primary mt-0.5" />
+                                {clientDetails.notes}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       ) : (
-                        <Select value={editedQuote?.client_id || ""} onValueChange={handleClientChange}>
-                          <SelectTrigger className="dark:bg-background/80">
-                            <SelectValue placeholder="Select client" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {clients.map((client) => (
-                              <SelectItem key={client.id} value={client.id}>
-                                {client.company_name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <div className="p-3 rounded-md border border-green-200 bg-green-50/30 dark:border-green-900/50 dark:bg-green-950/20">
+                          <p className="text-sm text-muted-foreground">No client information available</p>
+                        </div>
                       )}
                     </div>
-                  </div>
-                ) : clientDetails ? (
-                  <div
-                    className={cn(
-                      "grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded-md",
-                      "border border-green-200 bg-green-50/30",
-                      "dark:border-green-900/50 dark:bg-green-950/20",
-                    )}
-                  >
-                    {/* Company Name */}
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-muted-foreground">Company</p>
-                      <p className="text-sm">{clientDetails.company_name}</p>
-                    </div>
 
-                    {/* Contact Name */}
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-muted-foreground">Contact</p>
-                      <p className="text-sm">{clientDetails.contact_name}</p>
-                    </div>
-
-                    {/* Email */}
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-muted-foreground">Email</p>
-                      <p className="text-sm">{clientDetails.email}</p>
-                    </div>
-
-                    {/* Phone Number - Only if available */}
-                    {clientDetails.phone_number && (
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium text-muted-foreground">Phone</p>
-                        <p className="text-sm flex items-center">
-                          <Phone className="h-3.5 w-3.5 mr-1 text-primary" />
-                          {clientDetails.phone_number}
-                        </p>
+                    {/* Route Information Section */}
+                    <div>
+                      <div className="flex items-center mb-2">
+                        <Truck className="mr-2 h-4 w-4 text-primary" />
+                        <h3 className="text-lg font-medium">Route Information</h3>
                       </div>
-                    )}
-
-                    {/* Address - Only if any address field is available */}
-                    {(clientDetails.address_street || clientDetails.address_city) && (
-                      <div className="space-y-1 md:col-span-2">
-                        <p className="text-sm font-medium text-muted-foreground">Address</p>
-                        <div className="flex items-start">
-                          <MapPin className="h-3.5 w-3.5 mr-1 text-primary mt-0.5" />
-                          <div>{formatAddress()}</div>
+                      <Separator className={cn("mb-4", "bg-purple-200 dark:bg-purple-900/50")} />
+                      <div
+                        className={cn(
+                          "grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded-md",
+                          "border border-purple-200 bg-purple-50/30",
+                          "dark:border-purple-900/50 dark:bg-purple-950/20",
+                        )}
+                      >
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-muted-foreground">Origin</p>
+                          {isEditing ? (
+                            <Input
+                              value={editedQuote?.origin || ""}
+                              onChange={(e) => setEditedQuote({ ...editedQuote!, origin: e.target.value })}
+                              className="dark:bg-background/80"
+                            />
+                          ) : (
+                            <p className="text-sm">{displayedQuote.origin}</p>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-muted-foreground">Destination</p>
+                          {isEditing ? (
+                            <Input
+                              value={editedQuote?.destination || ""}
+                              onChange={(e) => setEditedQuote({ ...editedQuote!, destination: e.target.value })}
+                              className="dark:bg-background/80"
+                            />
+                          ) : (
+                            <p className="text-sm">{displayedQuote.destination}</p>
+                          )}
                         </div>
                       </div>
-                    )}
-
-                    {/* Payment Terms - Only if available */}
-                    {clientDetails.payment_terms && (
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium text-muted-foreground">Payment Terms</p>
-                        <p className="text-sm">{clientDetails.payment_terms}</p>
-                      </div>
-                    )}
-
-                    {/* Credit Limit - Only if available */}
-                    {clientDetails.credit_limit && (
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium text-muted-foreground">Credit Limit</p>
-                        <p className="text-sm flex items-center">
-                          <CreditCard className="h-3.5 w-3.5 mr-1 text-primary" />$
-                          {clientDetails.credit_limit.toFixed(2)}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Notes - Only if available */}
-                    {clientDetails.notes && (
-                      <div className="space-y-1 md:col-span-2">
-                        <p className="text-sm font-medium text-muted-foreground">Notes</p>
-                        <p className="text-sm flex items-start">
-                          <Info className="h-3.5 w-3.5 mr-1 text-primary mt-0.5" />
-                          {clientDetails.notes}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-3 rounded-md border border-green-200 bg-green-50/30 dark:border-green-900/50 dark:bg-green-950/20">
-                    <p className="text-sm text-muted-foreground">No client information available</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Route Information Section */}
-              <div>
-                <div className="flex items-center mb-2">
-                  <Truck className="mr-2 h-4 w-4 text-primary" />
-                  <h3 className="text-lg font-medium">Route Information</h3>
+                    </div>
+                  </TabsContent>
                 </div>
-                <Separator className={cn("mb-4", "bg-purple-200 dark:bg-purple-900/50")} />
-                <div
-                  className={cn(
-                    "grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded-md",
-                    "border border-purple-200 bg-purple-50/30",
-                    "dark:border-purple-900/50 dark:bg-purple-950/20",
-                  )}
-                >
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-muted-foreground">Origin</p>
-                    {isEditing ? (
-                      <Input
-                        value={editedQuote?.origin || ""}
-                        onChange={(e) => setEditedQuote({ ...editedQuote!, origin: e.target.value })}
-                        className="dark:bg-background/80"
-                      />
-                    ) : (
-                      <p className="text-sm">{displayedQuote.origin}</p>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-muted-foreground">Destination</p>
-                    {isEditing ? (
-                      <Input
-                        value={editedQuote?.destination || ""}
-                        onChange={(e) => setEditedQuote({ ...editedQuote!, destination: e.target.value })}
-                        className="dark:bg-background/80"
-                      />
-                    ) : (
-                      <p className="text-sm">{displayedQuote.destination}</p>
-                    )}
-                  </div>
+                <div className="overflow-x-hidden">
+                  <TabsContent value="pricing" className="mt-0">
+                    Pricing content here
+                  </TabsContent>
                 </div>
-              </div>
+                <div className="overflow-x-hidden">
+                  <TabsContent value="environmental" className="mt-0">
+                    Environmental information here
+                  </TabsContent>
+                </div>
+              </Tabs>
 
               {/* Quote Options Section */}
               <div>
@@ -1305,7 +1364,7 @@ A.H Logistics Canada Inc.`,
             </div>
           </ScrollArea>
 
-          <DialogFooter className="p-6 pt-2">
+          <DialogFooter className="p-6 pt-2 mt-auto flex-shrink-0 border-t dialog-footer">
             <div className="flex flex-col sm:flex-row gap-2 w-full">
               <div className="flex gap-2 w-full sm:w-auto">
                 <Button variant="outline" size="sm" className="flex-1 sm:flex-none">
@@ -1562,4 +1621,12 @@ A.H Logistics Canada Inc.`,
       />
     </>
   )
+}
+
+interface QuoteOptionListProps {
+  options: QuoteOption[]
+  onUpdateStatus: (id: string, status: string) => Promise<void>
+  onEdit: (option: QuoteOption) => void
+  onDelete: (id: string) => Promise<void>
+  onDuplicate: (option: QuoteOption) => Promise<void>
 }

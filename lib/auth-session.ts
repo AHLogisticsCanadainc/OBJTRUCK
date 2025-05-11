@@ -1,4 +1,10 @@
 import { supabase } from "@/lib/database"
+import {
+  storeTokens,
+  isTokenExpiringSoon,
+  updateLastActiveTime,
+  getTokenExpirationFormatted,
+} from "@/lib/token-service"
 
 /**
  * Utility function to refresh the auth token
@@ -34,10 +40,17 @@ export async function refreshAuthToken() {
 
     console.log("✅ Token refreshed successfully")
 
-    // Update last active time
-    if (typeof window !== "undefined") {
-      localStorage.setItem("lastActiveTime", Date.now().toString())
+    // Store the refreshed tokens
+    if (data.session) {
+      const expiresAt = data.session.expires_at
+        ? new Date(data.session.expires_at * 1000).getTime()
+        : Date.now() + 8 * 60 * 60 * 1000
+
+      storeTokens(data.session.access_token, data.session.refresh_token || "", expiresAt)
     }
+
+    // Update last active time
+    updateLastActiveTime()
 
     return { success: true, session: data.session }
   } catch (error) {
@@ -164,17 +177,7 @@ export function initAuthListeners() {
  * @returns Boolean indicating if the session is about to expire
  */
 export function isSessionAboutToExpire(expiresAt: number, thresholdMinutes = 30): boolean {
-  const now = Date.now()
-  const expiresInMs = expiresAt - now
-  const thresholdMs = thresholdMinutes * 60 * 1000
-  const expiresInMinutes = Math.floor(expiresInMs / (60 * 1000))
-
-  const isExpiringSoon = expiresInMs < thresholdMs
-  if (isExpiringSoon) {
-    console.log(`⚠️ Session expires in ${expiresInMinutes} minutes (threshold: ${thresholdMinutes} minutes)`)
-  }
-
-  return isExpiringSoon
+  return isTokenExpiringSoon(thresholdMinutes * 60 * 1000)
 }
 
 /**
@@ -183,17 +186,7 @@ export function isSessionAboutToExpire(expiresAt: number, thresholdMinutes = 30)
  * @returns String with the remaining time
  */
 export function getSessionRemainingTime(expiresAt: number): string {
-  const now = Date.now()
-  const remainingMs = Math.max(0, expiresAt - now)
-
-  const minutes = Math.floor(remainingMs / (60 * 1000))
-  const hours = Math.floor(minutes / 60)
-
-  if (hours > 0) {
-    return `${hours}h ${minutes % 60}m`
-  }
-
-  return `${minutes}m`
+  return getTokenExpirationFormatted()
 }
 
 /**

@@ -216,6 +216,7 @@ export function QuotingManager() {
           open={isViewDialogOpen}
           onOpenChange={setIsViewDialogOpen}
           onUpdateQuote={updateQuote}
+          containerClassName="overflow-hidden"
         />
       )}
 

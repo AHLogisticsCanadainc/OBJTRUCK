@@ -10,6 +10,9 @@ import { cleanupAuthData } from "@/lib/auth-utils"
 import { testSupabaseConnection } from "@/lib/debug-utils"
 import { checkSession, refreshAuthToken, debugSession } from "@/lib/auth-session"
 
+// Add import for token service at the top of the file
+import { storeTokens, updateLastActiveTime, hasBeenInactiveTooLong, storeUserData } from "@/lib/token-service"
+
 // Define the shape of the Session object
 interface Session {
   token: string
@@ -346,14 +349,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const checkInactivity = useCallback(() => {
     if (typeof window === "undefined" || !session) return
 
-    const lastActiveTime = localStorage.getItem("lastActiveTime")
-    if (!lastActiveTime) return
-
-    const inactiveTime = Date.now() - Number.parseInt(lastActiveTime)
-    const maxInactiveTime = 60 * 60 * 1000 // 1 hour of inactivity
-
-    if (inactiveTime > maxInactiveTime) {
-      console.log(`⚠️ User inactive for ${Math.floor(inactiveTime / 60000)} minutes, signing out`)
+    // Use our token service to check inactivity
+    if (hasBeenInactiveTooLong(60 * 60 * 1000)) {
+      // 1 hour of inactivity
+      console.log(`⚠️ User inactive for too long, signing out`)
 
       // Save the current path for redirect after login
       if (pathname && pathname !== "/auth/signin") {
@@ -504,6 +503,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         lastLogin: new Date().toISOString(),
         avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.user.user_metadata?.full_name || "User")}&background=random`,
       }
+
+      // Store user data using our token service
+      storeUserData(userProfile)
 
       setUser(userProfile)
       console.log("✅ User profile set successfully")
@@ -775,6 +777,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Reset login attempts
       resetLoginAttempts(email)
+
+      // Store tokens using our token service
+      if (data.session) {
+        const expiresAt = data.session.expires_at
+          ? new Date(data.session.expires_at * 1000).getTime()
+          : Date.now() + 8 * 60 * 60 * 1000
+
+        storeTokens(data.session.access_token, data.session.refresh_token || "", expiresAt)
+
+        // Update last active time
+        updateLastActiveTime()
+      }
 
       // Fetch user profile
       const profileSuccess = await fetchUserProfile(data.user.id)
