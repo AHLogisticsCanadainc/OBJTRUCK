@@ -23,6 +23,9 @@ export const authDefaults = {
   },
   session: {
     defaultExpirationHours: 8, // Default to 8 hours (browser session)
+    extendedExpirationDays: 30, // Extended session duration (30 days)
+    refreshWindowMinutes: 60, // Refresh token if less than 60 minutes remaining
+    inactivityTimeoutHours: 1, // Log out after 1 hour of inactivity
   },
 }
 
@@ -75,6 +78,10 @@ export function validateSecurityConfig() {
 
   if (authDefaults.loginAttempts.lockoutMinutes < 15) {
     issues.push("Lockout duration should be at least 15 minutes")
+  }
+
+  if (authDefaults.session.extendedExpirationDays > 90) {
+    issues.push("Extended session duration should not exceed 90 days")
   }
 
   return {

@@ -152,13 +152,16 @@ export function QuoteDetails({ quote, open, onOpenChange, onUpdateQuote }: Quote
   // Update displayed quote when the quote prop changes
   useEffect(() => {
     if (quote) {
-      setDisplayedQuote(quote)
+      // Ensure we preserve the client_id when setting the displayed quote
+      setDisplayedQuote({
+        ...quote,
+        client_id: quote.client_id || displayedQuote?.client_id,
+      })
     }
-  }, [quote])
+  }, [quote, displayedQuote?.client_id])
 
   // Log when the component mounts with a quote
   useEffect(() => {
-    // Log when the component mounts with a quote
     if (quote) {
       console.log("QuoteDetails mounted with quote:", quote.id)
       console.log("Quote client_id:", quote.client_id)
@@ -230,12 +233,16 @@ export function QuoteDetails({ quote, open, onOpenChange, onUpdateQuote }: Quote
     if (open && displayedQuote?.client_id) {
       console.log("Loading client details for quote:", displayedQuote.id, "client:", displayedQuote.client_id)
       loadClientDetails(displayedQuote.client_id)
-    } else if (open && !displayedQuote?.client_id) {
-      console.warn("Quote has no client_id:", displayedQuote)
+    } else if (open && !displayedQuote?.client_id && quote?.client_id) {
+      // Fallback to the original quote's client_id if displayedQuote doesn't have it
+      console.log("Using original quote client_id as fallback:", quote.client_id)
+      loadClientDetails(quote.client_id)
+    } else if (open) {
+      console.warn("No client_id available for quote:", displayedQuote?.id || quote?.id)
       setClientDetails(null)
       setClientError("This quote is not associated with a client")
     }
-  }, [displayedQuote?.client_id, open, loadClientDetails, displayedQuote])
+  }, [displayedQuote?.client_id, quote?.client_id, open, loadClientDetails, displayedQuote, quote])
 
   // Effect to load options when dialog opens
   useEffect(() => {

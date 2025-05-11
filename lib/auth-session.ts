@@ -4,6 +4,9 @@ import {
   isTokenExpiringSoon,
   updateLastActiveTime,
   getTokenExpirationFormatted,
+  getAccessToken,
+  getTokenExpirationTime,
+  hasValidAuthData,
 } from "@/lib/token-service"
 
 /**
@@ -21,13 +24,27 @@ export async function refreshAuthToken() {
       return { success: false, error: new Error("No session to refresh") }
     }
 
-    const { data, error } = await supabase.auth.refreshSession()
+    // Set a timeout to prevent hanging on network issues
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Token refresh timed out")), 8000)
+    })
+
+    // Refresh the session
+    const refreshPromise = supabase.auth.refreshSession()
+
+    // Race the refresh against the timeout
+    const { data, error } = (await Promise.race([
+      refreshPromise,
+      timeoutPromise.then(() => {
+        throw new Error("Token refresh timed out")
+      }),
+    ])) as any
 
     if (error) {
       console.error("❌ Error refreshing token:", error.message)
 
       // Check if this is a network error
-      if (error.message.includes("network") || error.message.includes("fetch")) {
+      if (error.message.includes("network") || error.message.includes("fetch") || error.message.includes("timeout")) {
         return {
           success: false,
           error,
@@ -55,6 +72,19 @@ export async function refreshAuthToken() {
     return { success: true, session: data.session }
   } catch (error) {
     console.error("❌ Exception refreshing token:", error)
+
+    // Check if this is a network error
+    if (
+      error instanceof Error &&
+      (error.message.includes("network") || error.message.includes("fetch") || error.message.includes("timeout"))
+    ) {
+      return {
+        success: false,
+        error,
+        networkError: true,
+      }
+    }
+
     return { success: false, error }
   }
 }
@@ -66,75 +96,159 @@ export async function refreshAuthToken() {
 export async function checkSession() {
   console.log("🔍 Checking session validity...")
   try {
-    const { data, error } = await supabase.auth.getSession()
+    // First check if we have valid auth data in local storage
+    const hasValidLocalAuth = hasValidAuthData()
+    console.log(`🔍 Local auth data valid: ${hasValidLocalAuth ? "Yes" : "No"}`)
 
-    if (error) {
-      console.error("❌ Error checking session:", error.message)
+    // If local auth is invalid, no need to check with server
+    if (!hasValidLocalAuth) {
       return {
         valid: false,
-        error,
-        errorType: "fetch_error",
+        reason: "No valid local auth data",
+        errorType: "no_local_auth",
       }
     }
 
-    if (!data.session) {
-      console.log("⚠️ No session found")
-      return {
-        valid: false,
-        reason: "No session found",
-        errorType: "no_session",
-      }
-    }
+    // Set a timeout to prevent hanging on network issues
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Session check timed out")), 8000) // Increased timeout
+    })
 
-    // Check if session is expired or about to expire
-    const expiresAt = data.session.expires_at ? new Date(data.session.expires_at * 1000) : null
-    const now = new Date()
+    // Get session from Supabase
+    const sessionPromise = supabase.auth.getSession()
 
-    if (expiresAt && expiresAt < now) {
-      console.log("⚠️ Session expired at", expiresAt.toISOString())
-      return {
-        valid: false,
-        reason: "Session expired",
-        expiresAt: expiresAt.toISOString(),
-        errorType: "expired",
-      }
-    }
+    // Race the session check against the timeout
+    try {
+      const { data, error } = (await Promise.race([
+        sessionPromise,
+        timeoutPromise.then(() => {
+          throw new Error("Session check timed out")
+        }),
+      ])) as any
 
-    // Check if session expires in less than 5 minutes
-    const expiresInMs = expiresAt ? expiresAt.getTime() - now.getTime() : 0
-    const expiresInMinutes = Math.floor(expiresInMs / (60 * 1000))
+      if (error) {
+        console.error("❌ Error checking session:", error.message)
 
-    if (expiresAt && expiresInMs < 5 * 60 * 1000) {
-      console.log(`⚠️ Session expires soon (in ${expiresInMinutes} minutes), refreshing...`)
-      // Session is about to expire, try to refresh it
-      const refreshResult = await refreshAuthToken()
-      if (!refreshResult.success) {
-        console.error("❌ Failed to refresh session:", refreshResult.error)
+        // Check if this is a network error
+        if (error.message.includes("network") || error.message.includes("fetch") || error.message.includes("timeout")) {
+          return {
+            valid: hasValidLocalAuth, // Fall back to local validation if network error
+            error,
+            errorType: "network_error",
+            usingLocalValidation: true,
+          }
+        }
+
         return {
           valid: false,
-          reason: "Failed to refresh session",
-          error: refreshResult.error,
-          expiresInMinutes,
-          errorType: "refresh_failed",
+          error,
+          errorType: "fetch_error",
         }
       }
-      console.log("✅ Session refreshed successfully")
+
+      if (!data.session) {
+        console.log("⚠️ No session found")
+        return {
+          valid: false,
+          reason: "No session found",
+          errorType: "no_session",
+        }
+      }
+
+      // Check if session is expired or about to expire
+      const expiresAt = data.session.expires_at ? new Date(data.session.expires_at * 1000) : null
+      const now = new Date()
+
+      if (expiresAt && expiresAt < now) {
+        console.log(`⚠️ Session expired at ${expiresAt.toLocaleString()}`)
+        return {
+          valid: false,
+          reason: "Session expired",
+          expiresAt: expiresAt.toISOString(),
+          exactExpiryTime: expiresAt.toLocaleString(),
+          errorType: "expired",
+        }
+      }
+
+      // Check if session expires in less than 5 minutes
+      const expiresInMs = expiresAt ? expiresAt.getTime() - now.getTime() : 0
+      const expiresInMinutes = Math.floor(expiresInMs / (60 * 1000))
+
+      if (expiresAt && expiresInMs < 5 * 60 * 1000) {
+        console.log(
+          `⚠️ Session expires soon at ${expiresAt.toLocaleString()} (in ${expiresInMinutes} minutes), refreshing...`,
+        )
+        // Session is about to expire, try to refresh it
+        const refreshResult = await refreshAuthToken()
+        if (!refreshResult.success) {
+          console.error("❌ Failed to refresh session:", refreshResult.error)
+          return {
+            valid: false,
+            reason: "Failed to refresh session",
+            error: refreshResult.error,
+            expiresInMinutes,
+            exactExpiryTime: expiresAt.toLocaleString(),
+            errorType: "refresh_failed",
+          }
+        }
+        console.log("✅ Session refreshed successfully")
+
+        // Get the new expiration time from the refreshed session
+        const newExpiresAt = refreshResult.session?.expires_at
+          ? new Date(refreshResult.session.expires_at * 1000)
+          : new Date(Date.now() + 60 * 60 * 1000)
+
+        return {
+          valid: true,
+          session: refreshResult.session,
+          refreshed: true,
+          expiresInMinutes: 60, // Assume new token is valid for at least 60 minutes
+          exactExpiryTime: newExpiresAt.toLocaleString(),
+        }
+      }
+
+      console.log(`✅ Session valid until ${expiresAt?.toLocaleString()} (expires in ${expiresInMinutes} minutes)`)
       return {
         valid: true,
-        session: refreshResult.session,
-        refreshed: true,
-        expiresInMinutes: 60, // Assume new token is valid for at least 60 minutes
+        session: data.session,
+        expiresInMinutes,
+        exactExpiryTime: expiresAt?.toLocaleString(),
       }
-    }
+    } catch (raceError) {
+      // Handle timeout or other errors in the race
+      console.error("❌ Session check race error:", raceError)
 
-    console.log(`✅ Session valid (expires in ${expiresInMinutes} minutes)`)
-    return {
-      valid: true,
-      session: data.session,
-      expiresInMinutes,
+      // If there's a timeout, fall back to local validation
+      if (raceError instanceof Error && raceError.message.includes("timeout")) {
+        console.log("⚠️ Session check timed out, falling back to local validation")
+        return {
+          valid: hasValidLocalAuth,
+          error: raceError,
+          errorType: "timeout",
+          usingLocalValidation: true,
+        }
+      }
+
+      throw raceError // Re-throw for the outer catch
     }
   } catch (error) {
     console.error("❌ Exception checking session:", error)
+
+    // If there's a network error, fall back to local validation
+    if (
+      error instanceof Error &&
+      (error.message.includes("network") || error.message.includes("fetch") || error.message.includes("timeout"))
+    ) {
+      const locallyValid = hasValidAuthData()
+      return {
+        valid: locallyValid,
+        error,
+        errorType: "network_exception",
+        usingLocalValidation: true,
+        locallyValid,
+      }
+    }
+
     return {
       valid: false,
       error,
@@ -162,8 +276,16 @@ export function initAuthListeners() {
       }
     } else if (event === "SIGNED_IN") {
       console.log("🎉 User signed in successfully")
+      if (session?.expires_at) {
+        const expiresAt = new Date(session.expires_at * 1000)
+        console.log(`🔒 Session will expire at ${expiresAt.toLocaleString()}`)
+      }
     } else if (event === "TOKEN_REFRESHED") {
       console.log("🔄 Auth token refreshed")
+      if (session?.expires_at) {
+        const expiresAt = new Date(session.expires_at * 1000)
+        console.log(`🔒 New token will expire at ${expiresAt.toLocaleString()}`)
+      }
     }
   })
 
@@ -240,9 +362,21 @@ export function debugSession(session: any) {
     console.log("📊 Session Debug Info:")
     console.log(`  • User ID: ${session.user?.id || "Unknown"}`)
     console.log(`  • Expires: ${expiresAt ? expiresAt.toISOString() : "Unknown"}`)
+    console.log(`  • Exact expiry time: ${expiresAt ? expiresAt.toLocaleString() : "Unknown"}`)
     console.log(`  • Expires in: ${expiresInMinutes} minutes`)
     console.log(`  • Token length: ${session.access_token?.length || 0} chars`)
     console.log(`  • Created at: ${session.created_at ? new Date(session.created_at).toISOString() : "Unknown"}`)
+
+    // Verify token is findable
+    const storedToken = getAccessToken()
+    console.log(`  • Token findable: ${storedToken ? "Yes" : "No"}`)
+
+    // Verify token expiration time
+    const storedExpiryTime = getTokenExpirationTime()
+    console.log(`  • Stored expiry time: ${storedExpiryTime ? new Date(storedExpiryTime).toLocaleString() : "Unknown"}`)
+
+    // Check if token is valid according to our validation logic
+    console.log(`  • Token valid according to validation: ${hasValidAuthData() ? "Yes" : "No"}`)
   } catch (error) {
     console.error("❌ Error debugging session:", error)
   }
@@ -297,5 +431,48 @@ export function analyzeSessionError(error: any): {
     isNetworkError,
     message,
     recommendedAction,
+  }
+}
+
+/**
+ * Verify token validity with exact expiration time
+ * @returns Object with validity status and expiration details
+ */
+export function verifyTokenValidity() {
+  try {
+    const token = getAccessToken()
+    const expiryTime = getTokenExpirationTime()
+
+    if (!token || !expiryTime) {
+      console.log("❌ Token or expiry time not found")
+      return {
+        valid: false,
+        reason: "Token or expiry time not found",
+      }
+    }
+
+    const now = Date.now()
+    const expiresAt = new Date(expiryTime)
+    const expiresInMs = expiryTime - now
+    const expiresInMinutes = Math.floor(expiresInMs / (60 * 1000))
+
+    const isValid = now < expiryTime
+
+    console.log(`🔒 Token verification: ${isValid ? "Valid" : "Invalid"}`)
+    console.log(`🔒 Token expires at ${expiresAt.toLocaleString()} (in ${expiresInMinutes} minutes)`)
+
+    return {
+      valid: isValid,
+      expiresAt: expiresAt.toLocaleString(),
+      expiresInMinutes,
+      tokenFound: !!token,
+    }
+  } catch (error) {
+    console.error("❌ Error during token verification:", error)
+    return {
+      valid: false,
+      reason: "Error during verification",
+      error: error instanceof Error ? error.message : "Unknown error",
+    }
   }
 }

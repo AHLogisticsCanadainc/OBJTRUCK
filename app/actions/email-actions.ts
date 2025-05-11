@@ -29,6 +29,8 @@ export async function sendQuoteEmail(
   recipientName = "Valued Customer",
 ) {
   try {
+    console.log(`Starting sendQuoteEmail for quote ID: ${quoteId}`)
+
     // Check if Resend API key is configured
     if (!isResendConfigured) {
       console.error("Resend API key is not configured")
@@ -38,12 +40,60 @@ export async function sendQuoteEmail(
       }
     }
 
+    // Validate quoteId
+    if (!quoteId) {
+      console.error("Invalid quote ID provided:", quoteId)
+      return {
+        success: false,
+        error: "Invalid quote ID provided",
+      }
+    }
+
     // Get the quote data with options
+    console.log(`Fetching quote data for ID: ${quoteId}`)
     const quoteData = await getQuoteWithOptions(quoteId)
 
     if (!quoteData) {
-      throw new Error("Quote not found")
+      // Check if the quote exists at all
+      const { data: basicQuoteData, error: basicQuoteError } = await supabase
+        .from("quotes")
+        .select("id, client_id")
+        .eq("id", quoteId)
+        .single()
+
+      if (basicQuoteError || !basicQuoteData) {
+        console.error("Quote not found in database:", basicQuoteError || "No data returned")
+        return {
+          success: false,
+          error: "Quote not found in database",
+        }
+      } else {
+        console.error("Quote exists but failed to load with options. Quote data:", basicQuoteData)
+        return {
+          success: false,
+          error: "Failed to load quote with options",
+        }
+      }
     }
+
+    // Validate that the quote has the necessary data
+    if (!quoteData.origin || !quoteData.destination) {
+      console.error("Quote is missing required fields:", {
+        hasOrigin: !!quoteData.origin,
+        hasDestination: !!quoteData.destination,
+      })
+      return {
+        success: false,
+        error: "Quote is missing required information (origin/destination)",
+      }
+    }
+
+    console.log(`Quote data retrieved successfully:`, {
+      id: quoteData.id,
+      reference: quoteData.reference,
+      optionsCount: quoteData.options?.length || 0,
+      clientId: quoteData.client_id,
+    })
 
     // Generate the plain text version of the email
     const plainText = generatePlainTextEmail(quoteData, customMessage, recipientName)
@@ -52,6 +102,9 @@ export async function sendQuoteEmail(
     const htmlContent = generateHtmlEmail(quoteData, customMessage, recipientName)
 
     // Send the email using Resend
+    console.log(
+      `Sending email to ${clientEmail} with CC: ${ccRecipients.join(", ")} and BCC: ${bccRecipients.join(", ")}`,
+    )
     const { data, error } = await resend.emails.send({
       from: "A.H Logistics <gurpreet@logisticcanada.ca>",
       to: [clientEmail],
@@ -66,6 +119,8 @@ export async function sendQuoteEmail(
       console.error("Error sending email:", error)
       throw new Error(`Failed to send email: ${error.message}`)
     }
+
+    console.log("Email sent successfully, updating quote status")
 
     // Update the quote with sent_email status
     const { error: updateError } = await supabase
@@ -84,6 +139,7 @@ export async function sendQuoteEmail(
     // Revalidate the quotes page to reflect the changes
     revalidatePath("/dashboard")
 
+    console.log("Quote email process completed successfully")
     return { success: true, data }
   } catch (error) {
     console.error("Error in sendQuoteEmail:", error)

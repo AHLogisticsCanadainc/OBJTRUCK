@@ -22,6 +22,7 @@ import {
   MessageSquare,
   Wrench,
   MapPin,
+  Bug,
 } from "lucide-react"
 import { SignOutButton } from "@/components/sign-out-button"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -107,6 +108,12 @@ const navItems = [
     href: "/dashboard/tools",
     icon: Wrench,
     description: "Specialized tools and calculators",
+  },
+  {
+    title: "Authentication Debug",
+    href: "/dashboard/debug",
+    icon: Bug,
+    description: "Debug authentication issues",
   },
 ]
 
