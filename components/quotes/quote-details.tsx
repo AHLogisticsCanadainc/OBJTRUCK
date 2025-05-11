@@ -34,6 +34,7 @@ import {
   PlusCircle,
   RefreshCw,
   X,
+  AlertTriangle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useClients } from "@/hooks/use-clients"
@@ -51,6 +52,7 @@ import { CreateOptionForm } from "./option-form/create-option-form"
 // Add this import at the top of the file
 import { testSupabaseConnection, checkTableStructure, checkQuoteAndOptions } from "@/lib/debug-supabase-connection"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface QuoteDetailsProps {
   quote: Quote
@@ -651,6 +653,17 @@ export function QuoteDetails({ quote, open, onOpenChange, onUpdateQuote }: Quote
     if (displayedQuote.sent_email) {
       handleToggleEmailStatus()
       return // Add this return statement to exit early
+    }
+
+    // Check if Resend API key is configured
+    if (!isResendConfigured) {
+      // Show a toast notification instead of displaying in the UI
+      toast({
+        title: "Email Service Not Configured",
+        description: "Please add RESEND_API_KEY to your environment variables.",
+        variant: "destructive",
+      })
+      return
     }
 
     // Set the default recipient name
@@ -1371,41 +1384,51 @@ A.H Logistics Canada Inc.`,
                   <Printer className="mr-2 h-4 w-4" />
                   Print
                 </Button>
-                {!isResendConfigured && (
-                  <Alert variant="destructive" className="mb-4">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>
-                      Email service is not configured. Please add RESEND_API_KEY to your environment variables.
-                    </AlertDescription>
-                  </Alert>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={cn(
-                    "flex-1 sm:flex-none",
-                    displayedQuote.sent_email && "bg-green-600 hover:bg-green-700 text-white border-green-600",
-                  )}
-                  onClick={showEmailConfirmation}
-                  disabled={isSendingEmail || isLoadingClient || !clientDetails?.email}
-                >
-                  {isSendingEmail ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {displayedQuote.sent_email ? "Updating..." : "Sending..."}
-                    </>
-                  ) : displayedQuote.sent_email ? (
-                    <>
-                      <MailIcon className="mr-2 h-4 w-4" />
-                      Email Sent
-                    </>
-                  ) : (
-                    <>
-                      <MailIcon className="mr-2 h-4 w-4" />
-                      Email to Customer
-                    </>
-                  )}
-                </Button>
+
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={cn(
+                          "flex-1 sm:flex-none",
+                          displayedQuote.sent_email && "bg-green-600 hover:bg-green-700 text-white border-green-600",
+                          !isResendConfigured && "relative",
+                        )}
+                        onClick={showEmailConfirmation}
+                        disabled={isSendingEmail || isLoadingClient || !clientDetails?.email || !isResendConfigured}
+                      >
+                        {isSendingEmail ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            {displayedQuote.sent_email ? "Updating..." : "Sending..."}
+                          </>
+                        ) : displayedQuote.sent_email ? (
+                          <>
+                            <MailIcon className="mr-2 h-4 w-4" />
+                            Email Sent
+                          </>
+                        ) : (
+                          <>
+                            <MailIcon className="mr-2 h-4 w-4" />
+                            Email to Customer
+                          </>
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    {!isResendConfigured && (
+                      <TooltipContent side="bottom" className="max-w-xs">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                          <p className="text-sm">
+                            Email service is not configured. Please add RESEND_API_KEY to your environment variables.
+                          </p>
+                        </div>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
               </div>
               <div className="flex gap-2 w-full sm:w-auto sm:ml-auto">
                 <Button variant="outline" size="sm" className="hidden md:flex" onClick={handleCheckConnection}>

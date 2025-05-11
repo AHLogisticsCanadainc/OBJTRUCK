@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
+import { getAccessToken, getRefreshToken } from "@/lib/token-service"
 
 // Initialize Supabase client with environment variables
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
@@ -11,13 +12,49 @@ let supabaseInstance: ReturnType<typeof createClient> | null = null
 export function getSupabaseClient() {
   if (!supabaseInstance && supabaseUrl && supabaseAnonKey) {
     try {
-      supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+      // Enhanced client options with better error handling
+      const clientOptions = {
         auth: {
           persistSession: true,
           autoRefreshToken: true,
           detectSessionInUrl: true,
+          storageKey: "supabase.auth.token",
+          storage: {
+            getItem: (key: string) => {
+              try {
+                // Use our token service for auth-related keys
+                if (key.includes("access_token")) {
+                  return getAccessToken()
+                }
+                if (key.includes("refresh_token")) {
+                  return getRefreshToken()
+                }
+                // Fall back to localStorage for other keys
+                return localStorage.getItem(key)
+              } catch (error) {
+                console.error(`Error retrieving key ${key}:`, error)
+                return null
+              }
+            },
+            setItem: (key: string, value: string) => {
+              try {
+                localStorage.setItem(key, value)
+              } catch (error) {
+                console.error(`Error setting key ${key}:`, error)
+              }
+            },
+            removeItem: (key: string) => {
+              try {
+                localStorage.removeItem(key)
+              } catch (error) {
+                console.error(`Error removing key ${key}:`, error)
+              }
+            },
+          },
         },
-      })
+      }
+
+      supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, clientOptions)
       console.log("Supabase client initialized with URL:", supabaseUrl ? "URL provided" : "URL missing")
     } catch (error) {
       console.error("Failed to initialize Supabase client:", error)
@@ -286,6 +323,7 @@ export function checkEnvironmentVariables() {
     typeof window === "undefined"
       ? {
           SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+          RESEND_API_KEY: process.env.RESEND_API_KEY,
         }
       : {}
 

@@ -5,44 +5,14 @@ import { getQuoteWithOptions } from "@/lib/email-utils"
 import { supabase } from "@/lib/database"
 import { revalidatePath } from "next/cache"
 
-// Function to get Resend API key from database
-async function getResendApiKey() {
-  try {
-    // Fetch from database - row ID 2 in the api_keys table
-    const { data, error } = await supabase.from("api_keys").select("api_key").eq("id", 2).eq("is_active", true).single()
-
-    if (error) {
-      console.error("Error fetching Resend API key:", error)
-      return null
-    }
-
-    if (!data || !data.api_key) {
-      console.log("No active Resend API key found in database with ID 2")
-      return null
-    }
-
-    return data.api_key
-  } catch (err) {
-    console.error("Error in getResendApiKey:", err)
-    return null
-  }
+// Check if Resend API key is available from environment variable
+const isResendConfigured = !!process.env.RESEND_API_KEY
+if (!isResendConfigured) {
+  console.warn("Resend API key is not configured. Email functionality will be limited.")
 }
 
-// Check if Resend API key is available from database
-async function checkResendConfiguration() {
-  const apiKey = await getResendApiKey()
-  return !!apiKey
-}
-
-// Initialize Resend only when needed with the API key from database
-async function getResendClient() {
-  const apiKey = await getResendApiKey()
-  if (!apiKey) {
-    console.warn("Resend API key is not configured in database. Email functionality will be limited.")
-    return null
-  }
-  return new Resend(apiKey)
-}
+// Initialize Resend with the environment variable
+const resend = isResendConfigured ? new Resend(process.env.RESEND_API_KEY) : null
 
 // Unsubscribe form URL
 const UNSUBSCRIBE_URL = "https://forms.gle/4CFRBwRcBsz2Jz3t5"
@@ -59,15 +29,12 @@ export async function sendQuoteEmail(
   recipientName = "Valued Customer",
 ) {
   try {
-    // Get Resend client with API key from database
-    const resend = await getResendClient()
-
-    // Check if Resend client is available
-    if (!resend) {
-      console.error("Resend client could not be initialized")
+    // Check if Resend API key is configured
+    if (!isResendConfigured) {
+      console.error("Resend API key is not configured")
       return {
         success: false,
-        error: "Email service is not configured. Please add a valid Resend API key to the database.",
+        error: "Email service is not configured. Please add RESEND_API_KEY to your environment variables.",
       }
     }
 
