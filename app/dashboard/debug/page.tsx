@@ -1,20 +1,12 @@
 "use client"
 
-import { CardFooter } from "@/components/ui/card"
-
 import { useState } from "react"
 import { useAuth } from "@/components/auth-provider"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { CheckCircle, XCircle, Key, User, Database, RefreshCw, LogOut, Shield, Loader2 } from "lucide-react"
-import {
-  getAccessToken,
-  getTokenExpirationTime,
-  hasValidAuthData,
-  verifyTokenAccessibility,
-  getExactExpirationTime,
-} from "@/lib/token-service"
 import { testSupabaseConnection } from "@/lib/database"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 export default function AuthDebugPage() {
   const { user, session, signOut, refreshSession } = useAuth()
@@ -24,20 +16,11 @@ export default function AuthDebugPage() {
   } | null>(null)
 
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const supabase = createClientComponentClient()
+  const [supabaseSession, setSupabaseSession] = useState<any>(null)
 
   // Check if the user is authenticated
   const isAuthenticated = !!user && !!session
-
-  // Get token details
-  const accessToken = getAccessToken()
-  const tokenExpirationTime = getTokenExpirationTime()
-  const exactExpiryTime = getExactExpirationTime()
-
-  // Verify token accessibility
-  const tokenAccessibility = verifyTokenAccessibility()
-
-  // Check if we have valid auth data
-  const isValidAuthData = hasValidAuthData()
 
   // Test Supabase connection
   const testConnection = async () => {
@@ -45,11 +28,24 @@ export default function AuthDebugPage() {
     setConnectionStatus(result)
   }
 
+  // Get Supabase session
+  const getSupabaseSession = async () => {
+    const { data } = await supabase.auth.getSession()
+    setSupabaseSession(data.session)
+    console.log("Current Supabase session:", data.session)
+  }
+
   // Refresh the session
   const handleRefreshSession = async () => {
     setIsRefreshing(true)
     await refreshSession()
     setIsRefreshing(false)
+  }
+
+  // Format expiry time
+  const formatExpiryTime = (timestamp?: number) => {
+    if (!timestamp) return "Unknown"
+    return new Date(timestamp).toLocaleString()
   }
 
   return (
@@ -99,10 +95,10 @@ export default function AuthDebugPage() {
             {session ? (
               <>
                 <div className="flex justify-between">
-                  <span>Access Token:</span> <span>{accessToken ? "Present" : "Missing"}</span>
+                  <span>Access Token:</span> <span>{session.token ? "Present" : "Missing"}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Expiration Time:</span> <span>{exactExpiryTime || "Unknown"}</span>
+                  <span>Expiration Time:</span> <span>{formatExpiryTime(session.expiresAt)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>User ID:</span> <span>{session.userId}</span>
@@ -133,28 +129,16 @@ export default function AuthDebugPage() {
               )}
             </div>
             <div className="flex justify-between">
-              <span>Valid Auth Data:</span>
-              {isValidAuthData ? (
+              <span>Valid Session:</span>
+              {session && session.expiresAt && session.expiresAt > Date.now() ? (
                 <CheckCircle className="h-4 w-4 text-green-500" />
               ) : (
                 <XCircle className="h-4 w-4 text-red-500" />
               )}
             </div>
             <div className="flex justify-between">
-              <span>Token Accessible:</span>
-              {tokenAccessibility.tokenFound ? (
-                <CheckCircle className="h-4 w-4 text-green-500" />
-              ) : (
-                <XCircle className="h-4 w-4 text-red-500" />
-              )}
-            </div>
-            <div className="flex justify-between">
-              <span>Token Valid:</span>
-              {tokenAccessibility.tokenValid ? (
-                <CheckCircle className="h-4 w-4 text-green-500" />
-              ) : (
-                <XCircle className="h-4 w-4 text-red-500" />
-              )}
+              <span>User Data:</span>
+              {user ? <CheckCircle className="h-4 w-4 text-green-500" /> : <XCircle className="h-4 w-4 text-red-500" />}
             </div>
           </CardContent>
         </Card>
@@ -190,6 +174,45 @@ export default function AuthDebugPage() {
           <CardFooter>
             <Button onClick={testConnection} variant="outline">
               Test Connection
+            </Button>
+          </CardFooter>
+        </Card>
+
+        {/* Supabase Auth Status */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Key className="h-4 w-4" />
+              Supabase Auth Status
+            </CardTitle>
+            <CardDescription>Direct information from Supabase Auth</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {supabaseSession ? (
+              <>
+                <div className="flex justify-between">
+                  <span>Session ID:</span>
+                  <span>{supabaseSession.id ? supabaseSession.id.substring(0, 8) + "..." : "N/A"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Provider:</span> <span>{supabaseSession.provider || "Email"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Expires At:</span>
+                  <span>
+                    {supabaseSession.expires_at
+                      ? new Date(supabaseSession.expires_at * 1000).toLocaleString()
+                      : "Unknown"}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <p className="text-muted-foreground">Click the button below to fetch Supabase session</p>
+            )}
+          </CardContent>
+          <CardFooter>
+            <Button onClick={getSupabaseSession} variant="outline" size="sm">
+              Fetch Supabase Session
             </Button>
           </CardFooter>
         </Card>

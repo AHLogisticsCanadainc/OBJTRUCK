@@ -1,5 +1,3 @@
-import { clearTokens, getTokenExpirationTime as getTokenExpiration } from "@/lib/token-service"
-
 /**
  * Utility functions for authentication
  */
@@ -11,12 +9,25 @@ import { clearTokens, getTokenExpirationTime as getTokenExpiration } from "@/lib
 export function cleanupAuthData() {
   console.log("Cleaning up auth data...")
 
-  // Use the centralized token service to clear tokens
-  clearTokens()
+  // Clear local storage items related to auth
+  if (typeof window !== "undefined") {
+    const authItems = [
+      "sb-access-token",
+      "sb-refresh-token",
+      "sb-auth-token",
+      "supabase.auth.token",
+      "lastActiveTime",
+      "rememberMe",
+      "supabase-auth-token",
+    ]
 
-  // Clear any other auth-related state
+    authItems.forEach((item) => {
+      localStorage.removeItem(item)
+    })
+  }
+
+  // Clear any IndexedDB data if applicable
   try {
-    // Clear any IndexedDB data if applicable
     if (typeof window !== "undefined" && window.indexedDB) {
       const dbs = ["supabase", "auth", "session-store"]
       dbs.forEach((db) => {
@@ -31,7 +42,7 @@ export function cleanupAuthData() {
     console.error("Error clearing IndexedDB:", e)
   }
 
-  // Clear all auth-related cookies
+  // Clear any auth-related cookies
   if (typeof document !== "undefined") {
     const cookiesToClear = [
       "sb-access-token",
@@ -50,33 +61,21 @@ export function cleanupAuthData() {
 }
 
 /**
- * Check if the user is authenticated based on local storage
+ * Check if the user is authenticated based on Supabase session
  * This is a quick check that doesn't validate the token with the server
  */
-function hasValidAuthData(): boolean {
-  // Implement your logic to check for valid auth data here
-  // For example, check if tokens exist in local storage or cookies
-  // This is a placeholder implementation, replace with your actual logic
-  return !!localStorage.getItem("sb-access-token") || !!localStorage.getItem("sb-refresh-token")
-}
-
-export function isLocallyAuthenticated(): boolean {
+export async function isLocallyAuthenticated(): Promise<boolean> {
   try {
-    return hasValidAuthData()
+    // Import getSupabaseClient dynamically to avoid circular dependencies
+    const { getSupabaseClient } = await import("@/lib/database")
+    const supabase = getSupabaseClient()
+
+    if (!supabase) return false
+
+    const { data } = await supabase.auth.getSession()
+    return !!data.session
   } catch (e) {
     console.error("Error checking local authentication:", e)
     return false
-  }
-}
-
-/**
- * Get the expiration time of the current auth token
- */
-export function getTokenExpirationTime(): number | null {
-  try {
-    return getTokenExpiration()
-  } catch (e) {
-    console.error("Error getting token expiration time:", e)
-    return null
   }
 }

@@ -2,12 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { useAuth } from "@/components/auth-provider"
-import { getTokenExpirationTime, isTokenExpired } from "@/lib/token-service"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Clock, X, RefreshCw } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
-import { useRouter } from "next/navigation"
+import { getSupabaseClient } from "@/lib/database"
 
 interface SessionExpiryWarningProps {
   warningThresholdMinutes?: number
@@ -18,66 +17,68 @@ export function SessionExpiryWarning({
   warningThresholdMinutes = 10,
   criticalThresholdMinutes = 2,
 }: SessionExpiryWarningProps) {
-  const { session, refreshSession, signOut } = useAuth()
-  const router = useRouter()
+  const { session, refreshSession } = useAuth()
   const [showWarning, setShowWarning] = useState(false)
   const [expiresIn, setExpiresIn] = useState<string>("")
   const [exactExpiryTime, setExactExpiryTime] = useState<string>("")
   const [isCritical, setIsCritical] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isDismissed, setIsDismissed] = useState(false)
-  const [lastRefreshTime, setLastRefreshTime] = useState<number | null>(null)
 
-  const checkSessionExpiry = useCallback(() => {
-    if (!session || isDismissed) return
+  const checkSessionExpiry = useCallback(async () => {
+    if (isDismissed) return
 
-    const expiryTime = getTokenExpirationTime()
-    if (!expiryTime) return
+    try {
+      // Get the current session from Supabase
+      const supabase = getSupabaseClient()
+      const { data } = await supabase.auth.getSession()
 
-    const now = Date.now()
-    const timeRemaining = expiryTime - now
-    const minutesRemaining = Math.floor(timeRemaining / (60 * 1000))
-
-    // Check if token is already expired
-    if (isTokenExpired()) {
-      console.log("⚠️ Token has expired, signing out automatically")
-      // Store current path for redirect after login
-      if (typeof window !== "undefined" && window.location.pathname !== "/auth/signin") {
-        sessionStorage.setItem("redirectAfterLogin", window.location.pathname)
-        sessionStorage.setItem("authRedirectReason", "Your session has expired. Please sign in again.")
+      if (!data.session) {
+        // No session, no need to show warning
+        setShowWarning(false)
+        return
       }
 
-      // Sign out and redirect
-      signOut()
-      return
+      // Calculate expiry time
+      const expiryTime = data.session.expires_at ? new Date(data.session.expires_at * 1000).getTime() : 0
+
+      if (!expiryTime) {
+        setShowWarning(false)
+        return
+      }
+
+      const now = Date.now()
+      const timeRemaining = expiryTime - now
+      const minutesRemaining = Math.floor(timeRemaining / (60 * 1000))
+
+      // Format the exact expiry time
+      const expiryDate = new Date(expiryTime)
+      setExactExpiryTime(expiryDate.toLocaleString())
+
+      // Format the time remaining
+      if (minutesRemaining < 60) {
+        setExpiresIn(`${minutesRemaining} minute${minutesRemaining !== 1 ? "s" : ""}`)
+      } else {
+        const hours = Math.floor(minutesRemaining / 60)
+        const mins = minutesRemaining % 60
+        setExpiresIn(`${hours} hour${hours !== 1 ? "s" : ""} ${mins} minute${mins !== 1 ? "s" : ""}`)
+      }
+
+      // Show warning if session is about to expire
+      const shouldShowWarning = minutesRemaining <= warningThresholdMinutes
+      setShowWarning(shouldShowWarning)
+
+      // Set critical state if very close to expiry
+      setIsCritical(minutesRemaining <= criticalThresholdMinutes)
+
+      // If we're showing a warning and it's critical, automatically try to refresh the session
+      if (shouldShowWarning && minutesRemaining <= criticalThresholdMinutes && !isRefreshing) {
+        handleRefresh()
+      }
+    } catch (error) {
+      console.error("Error checking session expiry:", error)
     }
-
-    // Format the exact expiry time
-    const expiryDate = new Date(expiryTime)
-    setExactExpiryTime(expiryDate.toLocaleString())
-
-    // Format the time remaining
-    if (minutesRemaining < 60) {
-      setExpiresIn(`${minutesRemaining} minute${minutesRemaining !== 1 ? "s" : ""}`)
-    } else {
-      const hours = Math.floor(minutesRemaining / 60)
-      const mins = minutesRemaining % 60
-      setExpiresIn(`${hours} hour${hours !== 1 ? "s" : ""} ${mins} minute${mins !== 1 ? "s" : ""}`)
-    }
-
-    // Show warning if session is about to expire
-    const shouldShowWarning = minutesRemaining <= warningThresholdMinutes
-    setShowWarning(shouldShowWarning)
-
-    // Set critical state if very close to expiry
-    setIsCritical(minutesRemaining <= criticalThresholdMinutes)
-
-    // If we're showing a warning and the last refresh was more than 5 minutes ago,
-    // automatically try to refresh the session
-    if (shouldShowWarning && (!lastRefreshTime || now - lastRefreshTime > 5 * 60 * 1000)) {
-      handleRefresh()
-    }
-  }, [session, warningThresholdMinutes, criticalThresholdMinutes, isDismissed, lastRefreshTime, signOut])
+  }, [warningThresholdMinutes, criticalThresholdMinutes, isDismissed, isRefreshing])
 
   useEffect(() => {
     // Check immediately and then every 30 seconds
@@ -96,7 +97,6 @@ export function SessionExpiryWarning({
       if (success) {
         setShowWarning(false)
         setIsCritical(false)
-        setLastRefreshTime(Date.now())
       }
     } finally {
       setIsRefreshing(false)

@@ -12,6 +12,14 @@ export const authRedirects = {
 
 // Auth form defaults
 export const authDefaults = {
+  session: {
+    defaultExpirationHours: 8, // Default session duration
+    inactivityTimeoutHours: 1, // Timeout after inactivity
+  },
+  security: {
+    maxLoginAttempts: 5, // Maximum failed login attempts before blocking
+    blockDurationMinutes: 15, // Duration to block login after max attempts
+  },
   passwordMinLength: 12, // Increased from 8 to 12 for better security
   passwordRequiresSpecialChar: true,
   passwordRequiresNumber: true,
@@ -20,12 +28,6 @@ export const authDefaults = {
   loginAttempts: {
     max: 5,
     lockoutMinutes: 15,
-  },
-  session: {
-    defaultExpirationHours: 8, // Default to 8 hours (browser session)
-    extendedExpirationDays: 30, // Extended session duration (30 days)
-    refreshWindowMinutes: 60, // Refresh token if less than 60 minutes remaining
-    inactivityTimeoutHours: 1, // Log out after 1 hour of inactivity
   },
 }
 
@@ -72,16 +74,12 @@ export function validateSecurityConfig() {
     issues.push("Passwords should require lowercase letters")
   }
 
-  if (authDefaults.loginAttempts.max > 10) {
+  if (authDefaults.security.maxLoginAttempts > 10) {
     issues.push("Maximum login attempts should not exceed 10")
   }
 
-  if (authDefaults.loginAttempts.lockoutMinutes < 15) {
+  if (authDefaults.security.blockDurationMinutes < 15) {
     issues.push("Lockout duration should be at least 15 minutes")
-  }
-
-  if (authDefaults.session.extendedExpirationDays > 90) {
-    issues.push("Extended session duration should not exceed 90 days")
   }
 
   return {

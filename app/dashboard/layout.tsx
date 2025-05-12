@@ -6,49 +6,34 @@ import { useAuth } from "@/components/auth-provider"
 import { DashboardSidebar } from "@/components/dashboard/sidebar"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { useRouter, usePathname } from "next/navigation"
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { AlertCircle, RefreshCw } from "lucide-react"
-import { SessionExpiryWarning } from "@/components/session-expiry-warning" // Import the component
+import { SessionExpiryWarning } from "@/components/session-expiry-warning"
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const { user, isLoading, session, refreshSession, resetAuthState, immediateTokenVerify } = useAuth()
+  const { user, isLoading, immediateTokenVerify } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
-  const [isSessionValid, setIsSessionValid] = useState(true)
   const [authTimeout, setAuthTimeout] = useState(false)
-  const redirectInProgress = useRef(false)
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Update the retryAuth function to be more effective
+  // Function to manually retry auth check
   const retryAuth = async () => {
     console.log("🔄 Manually retrying auth check in dashboard layout...")
     setAuthTimeout(false)
 
-    // Clear any existing timeout
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current)
-    }
-
-    // Try immediate verification first
     try {
       const verified = await immediateTokenVerify()
-
-      if (verified) {
-        console.log("✅ Manual retry succeeded with immediate verification")
-        // The auth state has been updated by immediateTokenVerify
-      } else {
-        // If immediate verification fails, try resetting auth state
-        console.log("⚠️ Immediate verification failed during manual retry, resetting auth state")
-        resetAuthState()
+      if (!verified) {
+        goToSignIn()
       }
     } catch (error) {
-      console.error("❌ Error during manual retry:", error)
-      resetAuthState()
+      console.error("Error during auth retry:", error)
+      goToSignIn()
     }
   }
 
@@ -64,167 +49,39 @@ export default function DashboardLayout({
 
   // Set a timeout to prevent infinite loading
   useEffect(() => {
-    if (isLoading && !authTimeout) {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
-      }
-
-      timeoutRef.current = setTimeout(async () => {
-        console.log("⚠️ Auth loading timed out after 20 seconds in dashboard layout")
+    if (isLoading) {
+      const timeout = setTimeout(async () => {
+        console.log("⚠️ Auth loading timed out after 10 seconds in dashboard layout")
 
         // Try immediate verification as a last resort
-        const verified = await immediateTokenVerify()
-
-        if (!verified) {
-          console.log("❌ Immediate verification failed after timeout")
-          setAuthTimeout(true)
-        } else {
-          console.log("✅ Immediate verification succeeded after timeout")
-          // No need to set authTimeout since verification succeeded
-        }
-      }, 20000) // Increased from 15 seconds to 20 seconds
-    }
-
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
-      }
-    }
-  }, [isLoading, authTimeout, immediateTokenVerify])
-
-  // Also modify the session check to avoid redirects during quotes page navigation
-  useEffect(() => {
-    if (!isLoading && !user && !redirectInProgress.current) {
-      console.log("User not authenticated in dashboard layout, redirecting to signin")
-      redirectInProgress.current = true
-
-      // Immediately set a flag in sessionStorage to prevent infinite redirects
-      if (typeof window !== "undefined") {
-        // Save the current path for redirect after login
-        sessionStorage.setItem("redirectAfterLogin", pathname)
-        // Set a flag to indicate we're already redirecting
-        sessionStorage.setItem("redirectInProgress", "true")
-      }
-
-      // Use a small timeout to ensure the redirect happens
-      setTimeout(() => {
-        router.push("/auth/signin")
-      }, 50)
-    }
-  }, [user, isLoading, router, pathname])
-
-  // Reset redirect flag when pathname changes
-  useEffect(() => {
-    redirectInProgress.current = false
-  }, [pathname])
-
-  // Add periodic session check
-  useEffect(() => {
-    if (!user) return
-
-    // Check if session is about to expire
-    const checkSession = () => {
-      if (!session) return
-
-      const now = Date.now()
-      const expiresAt = session.expiresAt
-      const timeUntilExpiry = expiresAt - now
-
-      // If session expires in less than 30 minutes, refresh it
-      if (timeUntilExpiry < 30 * 60 * 1000) {
-        console.log(`Session expiring soon (in ${Math.floor(timeUntilExpiry / 60000)} minutes), refreshing...`)
-        refreshSession().catch((error) => {
-          console.error("Failed to refresh session:", error)
-
-          // Show a notification to the user that their session will expire soon
-          if (timeUntilExpiry > 0 && timeUntilExpiry < 5 * 60 * 1000) {
-            // Only show for sessions expiring in less than 5 minutes
-            // You could add a toast notification here
-            console.log("⚠️ Session expiring very soon, notifying user")
-          }
-
-          setIsSessionValid(false)
-        })
-      }
-    }
-
-    // Check immediately
-    checkSession()
-
-    // Then check periodically - more frequently to catch expiration
-    const interval = setInterval(checkSession, 5 * 60 * 1000) // Every 5 minutes
-
-    return () => clearInterval(interval)
-  }, [user, session, refreshSession, pathname])
-
-  // Handle invalid session
-  useEffect(() => {
-    if (!isSessionValid && !isLoading && !redirectInProgress.current) {
-      console.log("Session invalid, redirecting to signin")
-      redirectInProgress.current = true
-      // Save the current path for redirect after login
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("redirectAfterLogin", pathname)
-        sessionStorage.setItem("authRedirectReason", "Your session has expired. Please sign in again.")
-      }
-      router.push("/auth/signin")
-    }
-  }, [isSessionValid, isLoading, router, pathname])
-
-  // Clean up redirect flag when component unmounts
-  useEffect(() => {
-    return () => {
-      if (typeof window !== "undefined") {
-        sessionStorage.removeItem("redirectInProgress")
-      }
-    }
-  }, [])
-
-  // Update the useEffect that handles loading timeout to be more robust
-
-  // Add a new useEffect to handle loading timeout
-  useEffect(() => {
-    // If we're stuck in loading state for more than 10 seconds, try immediate verification
-    if (isLoading && !authTimeout) {
-      let loadingTimeout: NodeJS.Timeout
-      loadingTimeout = setTimeout(async () => {
-        console.log("⚠️ Dashboard auth loading taking too long, attempting immediate verification...")
         try {
           const verified = await immediateTokenVerify()
-
-          if (verified) {
-            console.log("✅ Dashboard immediate verification succeeded")
-            // No need to do anything else, the auth state has been updated
-          } else {
-            console.log("❌ Dashboard immediate verification failed")
-
-            // Check if we should redirect or show timeout UI
-            if (typeof window !== "undefined") {
-              const hasToken = localStorage.getItem("sb-access-token")
-
-              if (!hasToken) {
-                // No token, redirect to sign in
-                console.log("❌ No token found, redirecting to sign in")
-                sessionStorage.setItem("redirectAfterLogin", pathname || "")
-                sessionStorage.setItem("authRedirectReason", "Your session has expired. Please sign in again.")
-                router.push("/auth/signin")
-              } else {
-                // Has token but verification failed, show timeout UI
-                setAuthTimeout(true)
-              }
-            } else {
-              setAuthTimeout(true)
-            }
+          if (!verified) {
+            setAuthTimeout(true)
           }
         } catch (error) {
-          console.error("❌ Error during immediate verification:", error)
+          console.error("Error during immediate verification:", error)
           setAuthTimeout(true)
         }
-      }, 10000) // 10 seconds
+      }, 10000)
 
-      return () => clearTimeout(loadingTimeout)
+      return () => clearTimeout(timeout)
     }
-  }, [isLoading, authTimeout, immediateTokenVerify, router, pathname])
+  }, [isLoading, immediateTokenVerify])
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!isLoading && !user) {
+      console.log("User not authenticated in dashboard layout, redirecting to signin")
+
+      // Save the current path for redirect after login
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("redirectAfterLogin", pathname || "")
+      }
+
+      router.push("/auth/signin")
+    }
+  }, [user, isLoading, router, pathname])
 
   // Show timeout error with improved UI
   if (authTimeout) {

@@ -10,7 +10,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, Loader2 } from "lucide-react"
 import { UsernameInput } from "@/components/username-input"
 import { PasswordInput } from "@/components/password-input"
-import { RememberMeCheckbox } from "@/components/remember-me-checkbox"
 import { ThemeToggle } from "@/components/theme-toggle"
 import Head from "next/head"
 import { useRouter } from "next/navigation"
@@ -18,7 +17,6 @@ import { useRouter } from "next/navigation"
 export default function SignInPage() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
-  const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState("")
   const emailDomain = "@logisticcanada.ca"
   const usernameInputRef = useRef<HTMLInputElement>(null)
@@ -88,7 +86,7 @@ export default function SignInPage() {
     setIsLoading(true)
 
     try {
-      const result = await signIn(email, password, rememberMe)
+      const result = await signIn(email, password)
       if (!result.success) {
         setError(result.message || "Invalid username or password")
       } else {
@@ -185,14 +183,6 @@ export default function SignInPage() {
                     className="rounded-xl border-neutral-200 focus-visible:ring-[#ed1c23]"
                     autoComplete="current-password"
                   />
-
-                  <div className="flex justify-between items-center">
-                    <RememberMeCheckbox checked={rememberMe} onChange={setRememberMe} disabled={isLoading} />
-
-                    <a href="/auth/forgot-password" className="text-sm text-[#ed1c23] hover:underline">
-                      Forgot password?
-                    </a>
-                  </div>
                 </div>
 
                 <Button
